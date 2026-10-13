@@ -97,7 +97,18 @@
                     </div>
                     <div>
                         <h2 class="banner-title">논문 번역이 성공적으로 완료되었습니다!</h2>
-                        <p class="banner-desc">수식과 원본 다단 서식이 온전히 보존된 번역본 PDF를 다운로드할 수 있습니다.</p>
+                        <p class="banner-desc" id="downloadBannerDesc">수식과 원본 다단 서식이 온전히 보존된 번역본 PDF를 다운로드할 수 있습니다.</p>
+                        <div class="banner-scope-toggle" style="margin-top: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 14px; font-size: 0.85rem;">
+                            <span style="font-weight: 600; color: #374151;">다운로드 범위:</span>
+                            <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                                <input type="radio" name="bannerDownloadScope" value="translated" checked>
+                                <span id="bannerScopeTranslatedLabel">번역 요청한 페이지만</span>
+                            </label>
+                            <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                                <input type="radio" name="bannerDownloadScope" value="all">
+                                <span id="bannerScopeAllLabel">번역 안 된 페이지도 다운받기 (전체)</span>
+                            </label>
+                        </div>
                     </div>
                 </div>
                 <div class="banner-actions">
@@ -107,7 +118,7 @@
                             <polyline points="7 10 12 15 17 10"/>
                             <line x1="12" y1="15" x2="12" y2="3"/>
                         </svg>
-                        <span>번역된 PDF 다운로드</span>
+                        <span id="downloadBtnText">번역된 PDF 다운로드</span>
                     </button>
                     <button type="button" class="btn-banner-view" id="compareViewBtn">
                         <span>나란히 대조 보기</span>
@@ -339,6 +350,21 @@
                             </label>
                         </div>
                         <input type="text" class="form-input" id="customRangeInput" placeholder="예: 1-3, 5 (미입력시 전체)" style="display: none;">
+                    </div>
+
+                    <!-- Download Scope Options -->
+                    <div class="form-group" style="margin-bottom: 16px;">
+                        <label class="form-label">PDF 다운로드 범위</label>
+                        <div class="page-range-area" id="downloadScopeArea">
+                            <label class="radio-chip">
+                                <input type="radio" name="downloadScopeMode" value="translated" checked>
+                                <span>번역 요청한 페이지만 (기본)</span>
+                            </label>
+                            <label class="radio-chip">
+                                <input type="radio" name="downloadScopeMode" value="all">
+                                <span>번역 안 된 페이지도 다운받기</span>
+                            </label>
+                        </div>
                     </div>
 
                     <!-- Progress Section (Active during translation) -->

@@ -23,7 +23,9 @@ document.addEventListener('DOMContentLoaded', () => {
         startTime: null,
         // Cached canvases and translation data by page (1-based)
         pagesData: {}, // { [pageNum]: { originalCanvas, transCanvas, blocks, translationsMap } }
-        translatedPdfBlob: null
+        translatedPdfBlob: null,
+        lastTargetPages: [],
+        downloadBlobCache: { translated: null, all: null }
     };
 
     const engine = new PdfTranslatorEngine();
@@ -79,6 +81,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const downloadBanner = document.getElementById('downloadBanner');
     const downloadPdfBtn = document.getElementById('downloadPdfBtn');
+    const downloadBtnText = document.getElementById('downloadBtnText');
+    const downloadBannerDesc = document.getElementById('downloadBannerDesc');
+    const bannerScopeTranslatedLabel = document.getElementById('bannerScopeTranslatedLabel');
+    const bannerScopeAllLabel = document.getElementById('bannerScopeAllLabel');
     const compareViewBtn = document.getElementById('compareViewBtn');
     const bilingualTooltip = document.getElementById('bilingualTooltip');
     const tooltipOrig = document.getElementById('tooltipOrig');
@@ -331,6 +337,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.currentPage = 1;
         state.pagesData = {};
         state.translatedPdfBlob = null;
+        state.lastTargetPages = [];
+        state.downloadBlobCache = { translated: null, all: null };
         pdfFileInput.value = '';
 
         dropzone.style.display = 'block';
@@ -728,24 +736,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 renderViewMode();
 
-                // Prepare downloadable PDF
-                progressStatusText.textContent = '다운로드용 고해상도 PDF를 생성하고 있습니다...';
-                const canvasesToExport = [];
-                for (let p = 1; p <= state.totalPages; p++) {
-                    const pData = state.pagesData[p];
-                    if (pData && pData.transCanvas) {
-                        canvasesToExport.push(pData.transCanvas);
-                    } else if (pData && pData.originalCanvas) {
-                        canvasesToExport.push(pData.originalCanvas);
-                    } else {
-                        // Render fallback page if untouched
-                        const pdfPage = await state.pdfDoc.getPage(p);
-                        const { canvas } = await engine.renderOriginalPage(pdfPage, engine.scale);
-                        canvasesToExport.push(canvas);
-                    }
-                }
+                // Save translated target pages & reset cache
+                state.lastTargetPages = [...targetPages];
+                state.downloadBlobCache = { translated: null, all: null };
 
-                state.translatedPdfBlob = await engine.createPdfFromCanvases(canvasesToExport, state.pdfDoc);
+                // Prepare downloadable PDF based on user preference
+                progressStatusText.textContent = '다운로드용 고해상도 PDF를 생성하고 있습니다...';
+                const currentScope = getDownloadScopeMode();
+                await prepareDownloadPdf(currentScope);
+                updateDownloadButtonUI();
+
                 progressStatusText.textContent = '번역본 PDF가 준비되었습니다!' +
                     (keptOriginalCount > 0 ? ` (${keptOriginalCount}개 블록은 레이아웃 보존을 위해 원문 유지)` : '');
 
@@ -789,18 +789,170 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // =========================================================================
-    // 5. Download Action
+    // 5. Download & Export Management (Scope options)
     // =========================================================================
-    downloadPdfBtn.addEventListener('click', () => {
-        if (!state.translatedPdfBlob) {
+    function formatPageRangeString(pages) {
+        if (!pages || pages.length === 0) return '';
+        if (pages.length === 1) return `${pages[0]}`;
+        const ranges = [];
+        let start = pages[0];
+        let prev = pages[0];
+        for (let i = 1; i < pages.length; i++) {
+            const curr = pages[i];
+            if (curr === prev + 1) {
+                prev = curr;
+            } else {
+                ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+                start = curr;
+                prev = curr;
+            }
+        }
+        ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+        return ranges.join(', ');
+    }
+
+    function getDownloadScopeMode() {
+        const el = document.querySelector('input[name="downloadScopeMode"]:checked') ||
+                   document.querySelector('input[name="bannerDownloadScope"]:checked');
+        return el ? el.value : 'translated';
+    }
+
+    function setDownloadScopeMode(mode) {
+        document.querySelectorAll('input[name="downloadScopeMode"]').forEach(r => {
+            r.checked = (r.value === mode);
+        });
+        document.querySelectorAll('input[name="bannerDownloadScope"]').forEach(r => {
+            r.checked = (r.value === mode);
+        });
+        updateDownloadButtonUI();
+    }
+
+    async function prepareDownloadPdf(mode) {
+        if (!state.pdfDoc) return null;
+        mode = mode || getDownloadScopeMode();
+
+        if (state.downloadBlobCache && state.downloadBlobCache[mode]) {
+            state.translatedPdfBlob = state.downloadBlobCache[mode];
+            return state.translatedPdfBlob;
+        }
+
+        const isTranslatedOnly = (mode === 'translated');
+        let pagesToExport = [];
+
+        if (isTranslatedOnly) {
+            pagesToExport = (state.lastTargetPages && state.lastTargetPages.length > 0)
+                ? [...state.lastTargetPages]
+                : [state.currentPage];
+        } else {
+            for (let p = 1; p <= state.totalPages; p++) {
+                pagesToExport.push(p);
+            }
+        }
+
+        const canvasesToExport = [];
+        for (const p of pagesToExport) {
+            const pData = state.pagesData[p];
+            if (pData && pData.transCanvas) {
+                canvasesToExport.push(pData.transCanvas);
+            } else if (pData && pData.originalCanvas) {
+                canvasesToExport.push(pData.originalCanvas);
+            } else {
+                const pdfPage = await state.pdfDoc.getPage(p);
+                const { canvas } = await engine.renderOriginalPage(pdfPage, engine.scale);
+                canvasesToExport.push(canvas);
+            }
+        }
+
+        const blob = await engine.createPdfFromCanvases(canvasesToExport, state.pdfDoc);
+        if (!state.downloadBlobCache) state.downloadBlobCache = {};
+        state.downloadBlobCache[mode] = blob;
+        state.translatedPdfBlob = blob;
+        return blob;
+    }
+
+    function updateDownloadButtonUI() {
+        const mode = getDownloadScopeMode();
+        const hasHistory = state.lastTargetPages && state.lastTargetPages.length > 0;
+        const targetCount = hasHistory ? state.lastTargetPages.length : 1;
+        const total = state.totalPages || 0;
+
+        if (bannerScopeTranslatedLabel) {
+            const rangeStr = hasHistory ? ` (p.${formatPageRangeString(state.lastTargetPages)})` : '';
+            bannerScopeTranslatedLabel.textContent = `번역 요청한 페이지만 [${targetCount}p]${rangeStr}`;
+        }
+        if (bannerScopeAllLabel) {
+            bannerScopeAllLabel.textContent = `번역 안 된 페이지도 다운받기 [전체 ${total}p]`;
+        }
+
+        if (downloadBtnText) {
+            if (mode === 'translated') {
+                downloadBtnText.textContent = `번역된 ${targetCount}페이지 PDF 다운로드`;
+            } else {
+                downloadBtnText.textContent = `전체 ${total}페이지 PDF 다운로드 (원본 포함)`;
+            }
+        }
+    }
+
+    // Scope selection sync
+    document.querySelectorAll('input[name="downloadScopeMode"], input[name="bannerDownloadScope"]').forEach(radio => {
+        radio.addEventListener('change', async (e) => {
+            const newMode = e.target.value;
+            setDownloadScopeMode(newMode);
+            if (state.lastTargetPages && state.lastTargetPages.length > 0 && downloadBanner.style.display !== 'none') {
+                if (!state.downloadBlobCache || !state.downloadBlobCache[newMode]) {
+                    if (downloadBtnText) downloadBtnText.textContent = 'PDF 생성 중...';
+                    downloadPdfBtn.disabled = true;
+                    try {
+                        await prepareDownloadPdf(newMode);
+                    } catch (err) {
+                        console.error('PDF 생성 실패:', err);
+                    } finally {
+                        downloadPdfBtn.disabled = false;
+                        updateDownloadButtonUI();
+                    }
+                } else {
+                    state.translatedPdfBlob = state.downloadBlobCache[newMode];
+                }
+            }
+        });
+    });
+
+    downloadPdfBtn.addEventListener('click', async () => {
+        const mode = getDownloadScopeMode();
+        let blob = (state.downloadBlobCache && state.downloadBlobCache[mode]) || state.translatedPdfBlob;
+
+        if (!blob) {
+            if (downloadBtnText) downloadBtnText.textContent = 'PDF 생성 중...';
+            downloadPdfBtn.disabled = true;
+            try {
+                blob = await prepareDownloadPdf(mode);
+            } catch (err) {
+                alert('PDF 생성 중 오류가 발생했습니다: ' + err.message);
+                return;
+            } finally {
+                downloadPdfBtn.disabled = false;
+                updateDownloadButtonUI();
+            }
+        }
+
+        if (!blob) {
             alert('번역된 PDF가 아직 준비되지 않았습니다.');
             return;
         }
 
-        const url = URL.createObjectURL(state.translatedPdfBlob);
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         const origBase = state.pdfFileName.replace(/\.pdf$/i, '');
-        a.download = `[번역본]_${origBase}.pdf`;
+
+        let filename = `[번역본]_${origBase}.pdf`;
+        if (mode === 'translated' && state.lastTargetPages && state.lastTargetPages.length < state.totalPages) {
+            const pageStr = formatPageRangeString(state.lastTargetPages).replace(/\s+/g, '');
+            filename = `[번역본_p${pageStr}]_${origBase}.pdf`;
+        } else if (mode === 'all') {
+            filename = `[번역본_전체]_${origBase}.pdf`;
+        }
+
+        a.download = filename;
         a.href = url;
         document.body.appendChild(a);
         a.click();
