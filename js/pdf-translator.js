@@ -197,12 +197,14 @@ CRITICAL RULES:
 2. NEVER translate or alter:
    - Mathematical equations, symbols, and variables ($x$, $W$, $\\\\theta$, $E=mc^2$).
    - Citation markers ([1], [2-4], Smith et al., 2024).
-   - Figure/Table/Equation references and their numbers (Fig. 1, Table 2, Eq. 3).
+   - Figure/Table/Equation NUMBERS (keep the number, e.g. Fig. 1 -> 그림 1, Table 2 -> 표 2, Eq. 3 -> 식 (3)).
+     Follow Korean academic-society (KCI journal) convention: "Fig./Figure" -> "그림", "Table" -> "표", "Eq./Equation" -> "식".
    - Standard scientific acronyms (CNN, Transformer, DNA, API, etc.).
    - Section numbers at the start of headings (e.g. "2.1 Method" -> "2.1 방법").
 3. Each item has a "role": title | heading | body | caption.
    - title/heading: short noun phrase, no sentence ending.
-   - caption: keep the label ("Fig. 1.", "Table 2:") exactly, translate the rest.
+   - caption: Korean society style "그림 1. 설명" / "표 2. 설명" (label + number + period, then translated title).
+   - Section labels: "Abstract" -> "초록", "Keywords" -> "주제어", "References" -> "참고문헌", "Introduction" -> "서론", "Conclusion" -> "결론".
 4. LENGTH LIMIT: every item has "maxChars". The translation (including spaces) MUST NOT exceed it,
    because the Korean text has to fit into the original layout. Be concise, but never drop facts.
 5. Use consistent terminology for the same technical term throughout the document.
