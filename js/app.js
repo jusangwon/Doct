@@ -51,11 +51,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const previewEmpty = document.getElementById('previewEmpty');
     const singleCanvasContainer = document.getElementById('singleCanvasContainer');
-    const mainCanvas = document.getElementById('mainCanvas');
-    const textOverlayLayer = document.getElementById('textOverlayLayer');
     const dualViewContainer = document.getElementById('dualViewContainer');
-    const dualOrigCanvas = document.getElementById('dualOrigCanvas');
-    const dualTransCanvas = document.getElementById('dualTransCanvas');
+    const dualOrigPane = document.getElementById('dualOrigPane');
+    const dualTransPane = document.getElementById('dualTransPane');
+    const dualOrigPagesList = document.getElementById('dualOrigPagesList');
+    const dualTransPagesList = document.getElementById('dualTransPagesList');
     const prevPageBtn = document.getElementById('prevPageBtn');
     const nextPageBtn = document.getElementById('nextPageBtn');
     const pageIndicator = document.getElementById('pageIndicator');
@@ -88,7 +88,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const compareViewBtn = document.getElementById('compareViewBtn');
     const previewCard = document.getElementById('previewCard');
     const previewBody = document.getElementById('previewBody');
-    const dualOrigPane = document.getElementById('dualOrigPane');
     const toggleFullscreenBtn = document.getElementById('toggleFullscreenBtn');
     const fullscreenBtnText = document.getElementById('fullscreenBtnText');
     const iconExpand = toggleFullscreenBtn?.querySelector('.icon-expand');
@@ -334,6 +333,8 @@ document.addEventListener('DOMContentLoaded', () => {
             fileCard.style.display = 'flex';
             startTranslateBtn.disabled = false;
 
+            await ensurePageData(1);
+            setupContinuousPages();
             updatePagination();
             await renderCurrentPage();
         } catch (err) {
@@ -345,6 +346,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function resetFileState() {
         engine.resetDocState();
+        if (pageObserver) {
+            pageObserver.disconnect();
+            pageObserver = null;
+        }
         state.pdfDoc = null;
         state.pdfFileName = '';
         state.pdfFileBytes = null;
@@ -363,25 +368,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         previewEmpty.style.display = 'block';
         singleCanvasContainer.style.display = 'none';
+        singleCanvasContainer.innerHTML = '';
         dualViewContainer.style.display = 'none';
+        if (dualOrigPagesList) dualOrigPagesList.innerHTML = '';
+        if (dualTransPagesList) dualTransPagesList.innerHTML = '';
         pageIndicator.textContent = '- / -';
         prevPageBtn.disabled = true;
         nextPageBtn.disabled = true;
     }
 
     // =========================================================================
-    // 3. Page Rendering & Interactive Viewer
+    // 3. Page Rendering & Interactive Continuous Viewer
     // =========================================================================
-    async function renderCurrentPage() {
-        if (!state.pdfDoc) return;
 
-        previewEmpty.style.display = 'none';
-        updatePagination();
+    let pageObserver = null;
+    let isSyncingDualScroll = false;
+    let scrollThrottleTimer = null;
 
-        const pageNum = state.currentPage;
+    async function ensurePageData(pageNum) {
+        if (!state.pdfDoc || pageNum < 1 || pageNum > state.totalPages) return null;
         let pageData = state.pagesData[pageNum];
-
-        // If page has not been rendered yet, render original page
         if (!pageData || !pageData.originalCanvas) {
             const pdfPage = await state.pdfDoc.getPage(pageNum);
             const { canvas, viewport } = await engine.renderOriginalPage(pdfPage, engine.scale);
@@ -399,61 +405,213 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             state.pagesData[pageNum] = pageData;
         }
-
-        renderViewMode();
+        return pageData;
     }
 
-    function renderViewMode() {
-        const pageData = state.pagesData[state.currentPage];
-        if (!pageData) return;
+    function buildPageCardDOM(pageNum) {
+        const baseW = state.pagesData[1]?.originalCanvas
+            ? (state.pagesData[1].originalCanvas.width / engine.scale) * state.zoom
+            : 600 * state.zoom;
+        const baseH = state.pagesData[1]?.originalCanvas
+            ? (state.pagesData[1].originalCanvas.height / engine.scale) * state.zoom
+            : 850 * state.zoom;
+
+        // 1. Single View Card
+        let singleWrapper = document.getElementById(`singlePage-${pageNum}`);
+        if (!singleWrapper) {
+            singleWrapper = document.createElement('div');
+            singleWrapper.className = 'pdf-page-wrapper';
+            singleWrapper.id = `singlePage-${pageNum}`;
+            singleWrapper.dataset.page = pageNum;
+            singleWrapper.innerHTML = `
+                <div class="page-badge-header">
+                    <span class="page-badge-pill" id="singleBadge-${pageNum}">페이지 ${pageNum} / ${state.totalPages}</span>
+                </div>
+                <div class="pdf-page-card" id="singleCard-${pageNum}">
+                    <canvas id="singleCanvas-${pageNum}"></canvas>
+                    <div class="text-overlay-layer" id="singleOverlay-${pageNum}"></div>
+                </div>
+            `;
+            singleCanvasContainer.appendChild(singleWrapper);
+            const sCanvas = document.getElementById(`singleCanvas-${pageNum}`);
+            if (sCanvas) {
+                sCanvas.style.width = `${baseW}px`;
+                sCanvas.style.height = `${baseH}px`;
+            }
+        }
+
+        // 2. Dual Orig Card
+        let dualOrigWrapper = document.getElementById(`dualOrigPage-${pageNum}`);
+        if (!dualOrigWrapper && dualOrigPagesList) {
+            dualOrigWrapper = document.createElement('div');
+            dualOrigWrapper.className = 'pdf-page-wrapper';
+            dualOrigWrapper.id = `dualOrigPage-${pageNum}`;
+            dualOrigWrapper.dataset.page = pageNum;
+            dualOrigWrapper.innerHTML = `
+                <div class="page-badge-header">
+                    <span class="page-badge-pill">페이지 ${pageNum} (원문)</span>
+                </div>
+                <div class="pdf-page-card" id="dualOrigCard-${pageNum}">
+                    <canvas id="dualOrigCanvas-${pageNum}"></canvas>
+                </div>
+            `;
+            dualOrigPagesList.appendChild(dualOrigWrapper);
+            const dOrigCanvas = document.getElementById(`dualOrigCanvas-${pageNum}`);
+            if (dOrigCanvas) {
+                dOrigCanvas.style.width = `${baseW}px`;
+                dOrigCanvas.style.height = `${baseH}px`;
+            }
+        }
+
+        // 3. Dual Trans Card
+        let dualTransWrapper = document.getElementById(`dualTransPage-${pageNum}`);
+        if (!dualTransWrapper && dualTransPagesList) {
+            dualTransWrapper = document.createElement('div');
+            dualTransWrapper.className = 'pdf-page-wrapper';
+            dualTransWrapper.id = `dualTransPage-${pageNum}`;
+            dualTransWrapper.dataset.page = pageNum;
+            dualTransWrapper.innerHTML = `
+                <div class="page-badge-header">
+                    <span class="page-badge-pill" id="dualTransBadge-${pageNum}">페이지 ${pageNum} (대기)</span>
+                </div>
+                <div class="pdf-page-card" id="dualTransCard-${pageNum}">
+                    <canvas id="dualTransCanvas-${pageNum}"></canvas>
+                </div>
+            `;
+            dualTransPagesList.appendChild(dualTransWrapper);
+            const dTransCanvas = document.getElementById(`dualTransCanvas-${pageNum}`);
+            if (dTransCanvas) {
+                dTransCanvas.style.width = `${baseW}px`;
+                dTransCanvas.style.height = `${baseH}px`;
+            }
+        }
+    }
+
+    function setupContinuousPages() {
+        if (!state.pdfDoc || state.totalPages <= 0) return;
+        singleCanvasContainer.innerHTML = '';
+        if (dualOrigPagesList) dualOrigPagesList.innerHTML = '';
+        if (dualTransPagesList) dualTransPagesList.innerHTML = '';
+
+        for (let p = 1; p <= state.totalPages; p++) {
+            buildPageCardDOM(p);
+        }
+
+        if (pageObserver) {
+            pageObserver.disconnect();
+            pageObserver = null;
+        }
+
+        pageObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const pageNum = parseInt(entry.target.dataset.page, 10);
+                    if (pageNum) {
+                        renderPageItem(pageNum);
+                    }
+                }
+            });
+        }, {
+            root: null,
+            rootMargin: '600px 0px' // Preload 600px ahead
+        });
+
+        document.querySelectorAll('.pdf-page-wrapper').forEach(wrapper => {
+            pageObserver.observe(wrapper);
+        });
+    }
+
+    async function renderPageItem(pageNum) {
+        if (!state.pdfDoc || pageNum < 1 || pageNum > state.totalPages) return;
+        const pageData = await ensurePageData(pageNum);
+        if (!pageData || !pageData.originalCanvas) return;
 
         const effectiveCanvas = (state.viewMode === 'original' || !pageData.transCanvas)
             ? pageData.originalCanvas
             : pageData.transCanvas;
 
-        if (state.viewMode === 'dual') {
-            singleCanvasContainer.style.display = 'none';
-            dualViewContainer.style.display = 'grid';
+        const targetW = (effectiveCanvas.width / engine.scale) * state.zoom;
+        const targetH = (effectiveCanvas.height / engine.scale) * state.zoom;
 
-            // Draw original on left
-            dualOrigCanvas.width = pageData.originalCanvas.width;
-            dualOrigCanvas.height = pageData.originalCanvas.height;
-            dualOrigCanvas.style.width = `${(pageData.originalCanvas.width / engine.scale) * state.zoom}px`;
-            dualOrigCanvas.style.height = `${(pageData.originalCanvas.height / engine.scale) * state.zoom}px`;
-            const ctxO = dualOrigCanvas.getContext('2d');
-            ctxO.drawImage(pageData.originalCanvas, 0, 0);
+        // 1. Single View Canvas
+        const sCanvas = document.getElementById(`singleCanvas-${pageNum}`);
+        if (sCanvas) {
+            if (sCanvas.width !== effectiveCanvas.width || sCanvas.height !== effectiveCanvas.height || sCanvas._renderedCanvas !== effectiveCanvas) {
+                sCanvas.width = effectiveCanvas.width;
+                sCanvas.height = effectiveCanvas.height;
+                sCanvas._renderedCanvas = effectiveCanvas;
+                const sCtx = sCanvas.getContext('2d');
+                sCtx.drawImage(effectiveCanvas, 0, 0);
+            }
+            sCanvas.style.width = `${targetW}px`;
+            sCanvas.style.height = `${targetH}px`;
 
-            // Draw translated (or original if not yet translated) on right
-            const targetCanvas = pageData.transCanvas || pageData.originalCanvas;
-            dualTransCanvas.width = targetCanvas.width;
-            dualTransCanvas.height = targetCanvas.height;
-            dualTransCanvas.style.width = `${(targetCanvas.width / engine.scale) * state.zoom}px`;
-            dualTransCanvas.style.height = `${(targetCanvas.height / engine.scale) * state.zoom}px`;
-            const ctxT = dualTransCanvas.getContext('2d');
-            ctxT.drawImage(targetCanvas, 0, 0);
+            const sOverlay = document.getElementById(`singleOverlay-${pageNum}`);
+            if (sOverlay) {
+                buildOverlayForPage(pageData, sOverlay, targetW);
+            }
 
-        } else {
-            dualViewContainer.style.display = 'none';
-            singleCanvasContainer.style.display = 'block';
+            const sBadge = document.getElementById(`singleBadge-${pageNum}`);
+            if (sBadge) {
+                if (pageData.transCanvas && state.viewMode !== 'original') {
+                    sBadge.textContent = `페이지 ${pageNum} / ${state.totalPages} (번역 완료)`;
+                    sBadge.classList.add('translated');
+                } else {
+                    sBadge.textContent = `페이지 ${pageNum} / ${state.totalPages}`;
+                    sBadge.classList.remove('translated');
+                }
+            }
+        }
 
-            mainCanvas.width = effectiveCanvas.width;
-            mainCanvas.height = effectiveCanvas.height;
-            mainCanvas.style.width = `${(effectiveCanvas.width / engine.scale) * state.zoom}px`;
-            mainCanvas.style.height = `${(effectiveCanvas.height / engine.scale) * state.zoom}px`;
-            const ctx = mainCanvas.getContext('2d');
-            ctx.drawImage(effectiveCanvas, 0, 0);
+        // 2. Dual Orig Canvas
+        const dOrigCanvas = document.getElementById(`dualOrigCanvas-${pageNum}`);
+        if (dOrigCanvas) {
+            const origW = (pageData.originalCanvas.width / engine.scale) * state.zoom;
+            const origH = (pageData.originalCanvas.height / engine.scale) * state.zoom;
+            if (dOrigCanvas.width !== pageData.originalCanvas.width || dOrigCanvas.height !== pageData.originalCanvas.height) {
+                dOrigCanvas.width = pageData.originalCanvas.width;
+                dOrigCanvas.height = pageData.originalCanvas.height;
+                const dCtxO = dOrigCanvas.getContext('2d');
+                dCtxO.drawImage(pageData.originalCanvas, 0, 0);
+            }
+            dOrigCanvas.style.width = `${origW}px`;
+            dOrigCanvas.style.height = `${origH}px`;
+        }
 
-            buildInteractiveTextOverlay(pageData);
+        // 3. Dual Trans Canvas
+        const dTransCanvas = document.getElementById(`dualTransCanvas-${pageNum}`);
+        if (dTransCanvas) {
+            const transTarget = pageData.transCanvas || pageData.originalCanvas;
+            const transW = (transTarget.width / engine.scale) * state.zoom;
+            const transH = (transTarget.height / engine.scale) * state.zoom;
+            if (dTransCanvas.width !== transTarget.width || dTransCanvas.height !== transTarget.height || dTransCanvas._renderedCanvas !== transTarget) {
+                dTransCanvas.width = transTarget.width;
+                dTransCanvas.height = transTarget.height;
+                dTransCanvas._renderedCanvas = transTarget;
+                const dCtxT = dTransCanvas.getContext('2d');
+                dCtxT.drawImage(transTarget, 0, 0);
+            }
+            dTransCanvas.style.width = `${transW}px`;
+            dTransCanvas.style.height = `${transH}px`;
+
+            const dBadge = document.getElementById(`dualTransBadge-${pageNum}`);
+            if (dBadge) {
+                if (pageData.transCanvas) {
+                    dBadge.textContent = `페이지 ${pageNum} (번역 완료)`;
+                    dBadge.classList.add('translated');
+                } else {
+                    dBadge.textContent = `페이지 ${pageNum} (번역 대기)`;
+                    dBadge.classList.remove('translated');
+                }
+            }
         }
     }
 
-    function buildInteractiveTextOverlay(pageData) {
-        textOverlayLayer.innerHTML = '';
+    function buildOverlayForPage(pageData, overlayEl, displayWidth) {
+        overlayEl.innerHTML = '';
         if (!pageData.translationsMap || state.viewMode === 'original') return;
 
-        const displayWidth = (pageData.originalCanvas.width / engine.scale) * state.zoom;
         const scaleFactor = displayWidth / pageData.originalCanvas.width;
-
         pageData.blocks.forEach(block => {
             const trans = pageData.translationsMap[block.id];
             if (!trans) return;
@@ -471,15 +629,117 @@ document.addEventListener('DOMContentLoaded', () => {
                 bilingualTooltip.style.display = 'block';
                 positionTooltip(e);
             });
-
             el.addEventListener('mousemove', (e) => positionTooltip(e));
-
             el.addEventListener('mouseleave', () => {
                 bilingualTooltip.style.display = 'none';
             });
-
-            textOverlayLayer.appendChild(el);
+            overlayEl.appendChild(el);
         });
+    }
+
+    function renderViewMode() {
+        if (!state.pdfDoc || state.totalPages <= 0) return;
+
+        if (state.viewMode === 'dual') {
+            singleCanvasContainer.style.display = 'none';
+            dualViewContainer.style.display = 'grid';
+        } else {
+            dualViewContainer.style.display = 'none';
+            singleCanvasContainer.style.display = 'flex';
+        }
+
+        const baseW = state.pagesData[1]?.originalCanvas
+            ? (state.pagesData[1].originalCanvas.width / engine.scale) * state.zoom
+            : 600 * state.zoom;
+        const baseH = state.pagesData[1]?.originalCanvas
+            ? (state.pagesData[1].originalCanvas.height / engine.scale) * state.zoom
+            : 850 * state.zoom;
+
+        // Re-scale/render all pages for zoom or viewMode change
+        for (let p = 1; p <= state.totalPages; p++) {
+            if (state.pagesData[p]?.originalCanvas) {
+                renderPageItem(p);
+            } else {
+                const s = document.getElementById(`singleCanvas-${p}`);
+                if (s) { s.style.width = `${baseW}px`; s.style.height = `${baseH}px`; }
+                const doC = document.getElementById(`dualOrigCanvas-${p}`);
+                if (doC) { doC.style.width = `${baseW}px`; doC.style.height = `${baseH}px`; }
+                const dtC = document.getElementById(`dualTransCanvas-${p}`);
+                if (dtC) { dtC.style.width = `${baseW}px`; dtC.style.height = `${baseH}px`; }
+            }
+        }
+    }
+
+    async function renderCurrentPage() {
+        if (!state.pdfDoc) return;
+        previewEmpty.style.display = 'none';
+        updatePagination();
+
+        await renderPageItem(state.currentPage || 1);
+        renderViewMode();
+
+        if (state.currentPage < state.totalPages) {
+            renderPageItem(state.currentPage + 1);
+        }
+    }
+
+    function updateCurrentPageFromScroll(scrollContainer) {
+        if (!state.totalPages || state.totalPages <= 0) return;
+        if (scrollThrottleTimer) return;
+
+        scrollThrottleTimer = setTimeout(() => {
+            scrollThrottleTimer = null;
+            const selector = state.viewMode === 'dual'
+                ? '#dualOrigPagesList .pdf-page-wrapper'
+                : '#singleCanvasContainer .pdf-page-wrapper';
+            const wrappers = document.querySelectorAll(selector);
+            if (!wrappers || wrappers.length === 0) return;
+
+            const containerRect = scrollContainer.getBoundingClientRect();
+            const focalY = containerRect.top + Math.min(180, containerRect.height * 0.35);
+
+            let bestPage = state.currentPage;
+            let bestDist = Infinity;
+
+            wrappers.forEach(el => {
+                const rect = el.getBoundingClientRect();
+                const dist = Math.abs(rect.top - focalY);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestPage = parseInt(el.dataset.page, 10);
+                }
+            });
+
+            if (bestPage && bestPage !== state.currentPage && bestPage >= 1 && bestPage <= state.totalPages) {
+                state.currentPage = bestPage;
+                updatePagination();
+            }
+        }, 60);
+    }
+
+    // Scroll listeners
+    previewBody.addEventListener('scroll', () => {
+        if (state.viewMode !== 'dual') {
+            updateCurrentPageFromScroll(previewBody);
+        }
+    }, { passive: true });
+
+    if (dualOrigPane && dualTransPane) {
+        dualOrigPane.addEventListener('scroll', () => {
+            if (isSyncingDualScroll) return;
+            isSyncingDualScroll = true;
+            dualTransPane.scrollTop = dualOrigPane.scrollTop;
+            updateCurrentPageFromScroll(dualOrigPane);
+            isSyncingDualScroll = false;
+        }, { passive: true });
+
+        dualTransPane.addEventListener('scroll', () => {
+            if (isSyncingDualScroll) return;
+            isSyncingDualScroll = true;
+            dualOrigPane.scrollTop = dualTransPane.scrollTop;
+            updateCurrentPageFromScroll(dualTransPane);
+            isSyncingDualScroll = false;
+        }, { passive: true });
     }
 
     function positionTooltip(e) {
@@ -503,21 +763,35 @@ document.addEventListener('DOMContentLoaded', () => {
             tab.classList.add('active');
             state.viewMode = tab.dataset.mode;
             renderViewMode();
+            scrollToPage(state.currentPage, false);
         });
     });
 
-    // Pagination
+    // Pagination & Smooth Page Navigation
+    function scrollToPage(pageNum, smooth = true) {
+        if (pageNum < 1 || pageNum > state.totalPages) return;
+        state.currentPage = pageNum;
+        updatePagination();
+
+        const selector = state.viewMode === 'dual'
+            ? `#dualOrigPage-${pageNum}`
+            : `#singlePage-${pageNum}`;
+        const targetEl = document.querySelector(selector);
+        if (targetEl) {
+            targetEl.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+        }
+        renderPageItem(pageNum);
+    }
+
     prevPageBtn.addEventListener('click', () => {
         if (state.currentPage > 1) {
-            state.currentPage--;
-            renderCurrentPage();
+            scrollToPage(state.currentPage - 1);
         }
     });
 
     nextPageBtn.addEventListener('click', () => {
         if (state.currentPage < state.totalPages) {
-            state.currentPage++;
-            renderCurrentPage();
+            scrollToPage(state.currentPage + 1);
         }
     });
 
@@ -812,7 +1086,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (transCanvas.layoutWarnings) keptOriginalCount += transCanvas.layoutWarnings.length;
                 pageData.transCanvas = transCanvas;
 
-                // Live update if user is looking at this page
+                // Live update continuous page item immediately
+                renderPageItem(pageNum);
                 if (state.currentPage === pageNum) {
                     renderViewMode();
                 }
@@ -1060,7 +1335,7 @@ document.addEventListener('DOMContentLoaded', () => {
             t.classList.toggle('active', t.dataset.mode === 'dual');
         });
         renderViewMode();
-        previewEmpty.scrollIntoView({ behavior: 'smooth' });
+        previewCard.scrollIntoView({ behavior: 'smooth' });
     });
 
     // =========================================================================

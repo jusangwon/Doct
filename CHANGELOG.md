@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.0] - 2026-10-13
+
+### 📜 Added (연속 스크롤 뷰어 및 나란히 비교 양방향 동기화)
+- **연속 스크롤(Continuous Multi-Page Scroll) 지원**:
+  - 버튼을 매번 누르지 않고도 마우스 휠, 터치, 스크롤바로 문서 전체 페이지를 끊김 없이 위아래로 연속 열람 가능.
+  - IntersectionObserver 기반 지연 렌더링(Lazy Rendering) 및 첫 페이지 기준 가상 치수 선배치로 긴 논문도 스크롤 점프 없이 가볍고 부드럽게 로딩.
+- **실시간 페이지 표시기 및 툴바 연동**:
+  - 스크롤 이동 위치에 따라 상단 툴바의 현재 페이지 번호(`p / total`) 및 이전/다음 버튼 활성 상태 실시간 자동 갱신.
+  - 기존 이전/다음 버튼 클릭 시에도 해당 페이지 카드로 부드러운 스크롤(`scrollIntoView({ behavior: 'smooth' })`) 이동 지원.
+- **나란히 비교(Dual View) 양방향 동기화 스크롤(Synchronized Scroll)**:
+  - 원본(Original)과 서식 보존 번역본(Translated) 양면 컬럼이 1:1로 함께 스크롤되어, 어느 쪽을 스크롤하든 양쪽 단락 위치가 정확히 일치.
+  - 컬럼 상단 스티키 헤더(Sticky Header)를 적용하여 스크롤 중에도 각 컬럼 구분이 명확하게 유지.
+
+---
+
 ## [v1.3.2] - 2026-10-13
 
 ### ⚡ Improved & Resilient (Gemini Flash 9종 풀 확장 및 즉시 전환 최적화)

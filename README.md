@@ -86,8 +86,10 @@ java TranslateServer
    - 구글의 최신 Gemini API를 사용하여 SCI급 학술 논문에 최적화된 고급 번역을 제공합니다.
    - 트래픽 과밀(429/503) 시 **지수 백오프(Exponential Backoff)** 대기 및 6단계 대체 모델(`gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-1.5-flash` 등) 자동 순환 폴백으로 끊김 없는 번역을 지원합니다.
 
-4. **실시간 인터랙티브 뷰어 (나란히 대조 & 전체화면 & 툴팁)**
-   - **단일 보기 / 나란히 비교(Dual Split) / 원본만 보기** 모드 및 웹 브라우저 화면에 꽉 차는 **전체화면 크게보기**를 지원합니다.
+4. **연속 스크롤(Continuous Multi-Page Scroll) & 나란히 비교 동기화**
+   - 페이지 넘김 버튼을 누르지 않아도 **마우스 휠이나 터치 스크롤로 모든 페이지를 연속으로 쭉 이어서 열람**할 수 있습니다.
+   - **나란히 비교(Dual Split)** 모드에서는 원본과 번역본 양면 컬럼이 1:1로 함께 스크롤되어 대조 읽기가 매우 편리합니다.
+   - 단일 보기 / 나란히 비교 / 원본만 보기 및 브라우저 화면에 꽉 차는 **전체화면 크게보기**를 지원합니다.
    - 마우스를 올리면 원문(English)과 번역문(Korean)을 함께 보여주는 영한 대조 툴팁이 제공됩니다.
 
 5. **서식 보존 번역본 PDF 원클릭 다운로드**
@@ -127,8 +129,15 @@ Doct/
 
 > 💡 이전 버전의 전체 누적 변경 내역은 [CHANGELOG.md](CHANGELOG.md)에서 확인하실 수 있습니다.
 
-### [Latest] v1.3.2 (2026.10) - Gemini Flash 9종 풀 확장 및 즉시 전환 최적화
-- 🔄 **가용 Gemini Flash 9종 풀(Pool) 전면 개편**: 404 종료 모델을 제거하고 최신 검증 모델군(`gemini-flash-lite-latest`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-3-flash-preview`, `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-flash-latest`) 총 9개로 모델 풀 대폭 확대.
+### [Latest] v1.4.0 (2026.10) - 연속 스크롤 뷰어 및 나란히 비교 양방향 동기화 스크롤
+- 📜 **연속 스크롤(Continuous Multi-Page Scroll) 도입**: 페이지 넘김 버튼(`nextPageBtn`)을 누르지 않고도 마우스 휠 및 터치 스크롤로 모든 페이지를 연속으로 쭉 이어서 열람 가능.
+- 🔄 **나란히 비교(Dual View) 양방향 동기화 스크롤**: 원본(Original)과 번역본(Translated) 양면 컬럼이 1:1로 함께 스크롤되어 문단 위치가 항상 일치.
+- ⚡ **스마트 지연 렌더링 & 실시간 페이지 툴바 연동**: IntersectionObserver 기반으로 화면 근처 페이지만 지연 렌더링하여 빠른 속도를 유지하고, 스크롤 위치에 맞춰 툴바 페이지 표시기(`2 / 5`) 자동 갱신.
+
+---
+
+### v1.3.2 (2026.10) - Gemini Flash 9종 풀 확장 및 즉시 전환 최적화
+- 🔄 **가용 Gemini Flash 9종 풀(Pool) 전면 개편**: 최신 검증 모델군(`gemini-flash-lite-latest`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-3-flash-preview`, `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-flash-latest`) 총 9개로 모델 풀 대폭 확대.
 - ⚡ **일일 쿼터 초과 시 즉시 전환 (Fast-Failover)**: 무료 한도 소진(`Quota exceeded`) 감지 시 대기 지연 없이 즉시 다음 정상 Flash 모델로 패스하여 불필요한 대기 시간 제거.
 - 🚀 **서버 기본 모델 최신화**: `server.js` 기본 폴백 모델을 고가용성의 `gemini-flash-lite-latest`로 교체.
 

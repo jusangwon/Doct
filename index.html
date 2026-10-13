@@ -221,21 +221,24 @@
                         <p>우측 패널에서 논문 PDF를 선택하면 원본 문서와 번역 결과가 여기에 즉시 표시됩니다.</p>
                     </div>
 
-                    <!-- Single Canvas View -->
-                    <div class="canvas-container" id="singleCanvasContainer">
-                        <canvas id="mainCanvas"></canvas>
-                        <div class="text-overlay-layer" id="textOverlayLayer"></div>
+                    <!-- Single Continuous Multi-Page View -->
+                    <div class="canvas-container continuous-pages-list" id="singleCanvasContainer">
+                        <!-- Dynamically populated with continuous page cards -->
                     </div>
 
-                    <!-- Dual Side-by-Side View -->
+                    <!-- Dual Continuous Side-by-Side View -->
                     <div class="dual-view-container" id="dualViewContainer">
                         <div class="dual-pane" id="dualOrigPane">
-                            <span class="dual-pane-title">원본 (Original)</span>
-                            <canvas id="dualOrigCanvas"></canvas>
+                            <div class="dual-pane-sticky-header">
+                                <span class="dual-pane-title">원본 (Original)</span>
+                            </div>
+                            <div class="continuous-pages-list" id="dualOrigPagesList"></div>
                         </div>
                         <div class="dual-pane" id="dualTransPane">
-                            <span class="dual-pane-title">서식 보존 번역본 (Translated)</span>
-                            <canvas id="dualTransCanvas"></canvas>
+                            <div class="dual-pane-sticky-header">
+                                <span class="dual-pane-title">서식 보존 번역본 (Translated)</span>
+                            </div>
+                            <div class="continuous-pages-list" id="dualTransPagesList"></div>
                         </div>
                     </div>
                 </div>
