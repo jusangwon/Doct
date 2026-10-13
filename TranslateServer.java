@@ -32,6 +32,12 @@ public class TranslateServer {
 
     public static void main(String[] args) throws IOException {
         int port = PORT;
+        String envPort = System.getenv("PORT");
+        if (envPort != null && !envPort.isEmpty()) {
+            try {
+                port = Integer.parseInt(envPort.trim());
+            } catch (NumberFormatException ignored) {}
+        }
         if (args.length > 0) {
             try {
                 port = Integer.parseInt(args[0]);

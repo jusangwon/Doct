@@ -1,0 +1,21 @@
+{
+  "name": "doct",
+  "version": "1.0.0",
+  "description": "DocuTrans AI - Academic Paper Layout Preservation Translation Service",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": [
+    "pdf-translator",
+    "gemini",
+    "paper-translation",
+    "layout-preservation"
+  ],
+  "author": "jusangwon",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

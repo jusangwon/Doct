@@ -8,6 +8,18 @@ echo ========================================================
 echo.
 echo [1/3] 서버 환경을 확인하는 중...
 
+where node >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    echo [2/3] Node.js 환경이 감지되었습니다. 웹 서버를 시작합니다...
+    start "" http://localhost:8080/
+    echo [3/3] 브라우저가 열렸습니다 (http://localhost:8080/)
+    echo .env 파일의 GEMINI_API_KEY 가 자동으로 로드됩니다.
+    echo 서버를 중지하려면 이 창을 닫거나 Ctrl+C를 누르세요.
+    echo.
+    node server.js
+    goto end
+)
+
 where java >nul 2>nul
 if %ERRORLEVEL% equ 0 (
     echo [2/3] Java(JDK) 환경이 감지되었습니다. Java 서버를 시작합니다...
