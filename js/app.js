@@ -965,6 +965,8 @@ document.addEventListener('DOMContentLoaded', () => {
         startTimer();
 
         const targetLang = targetLangSelect.value;
+        const targetTier = modelTierSelect ? modelTierSelect.value : 'flash';
+        engine.setModelTier(targetTier);
         const totalTarget = targetPages.length;
         const chkFig = document.getElementById('chkFigureTextKeep');
         const chkRef = document.getElementById('chkRefPreserve');
@@ -1039,6 +1041,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (state.shouldCancel) break;
                     const chunk = translatable.slice(c, c + chunkSize);
                     const results = await engine.callGeminiTranslate(chunk, targetLang, {
+                        modelTier: targetTier,
                         onStatusUpdate: (msg) => {
                             if (progressStatusText) progressStatusText.textContent = msg;
                         }
@@ -1060,6 +1063,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         try {
                             const results = await engine.callGeminiTranslate(chunk, targetLang, {
                                 shorten: true,
+                                modelTier: targetTier,
                                 currentTranslations: translationsMap,
                                 onStatusUpdate: (msg) => {
                                     if (progressStatusText) progressStatusText.textContent = msg;
@@ -1404,6 +1408,12 @@ document.addEventListener('DOMContentLoaded', () => {
         closeMobileGuideBtn.addEventListener('click', () => {
             sessionStorage.setItem('doct_mobile_guide_seen', 'true');
             if (mobileGuideModalOverlay) mobileGuideModalOverlay.style.display = 'none';
+        });
+    }
+
+    if (modelTierSelect) {
+        modelTierSelect.addEventListener('change', (e) => {
+            engine.setModelTier(e.target.value);
         });
     }
 

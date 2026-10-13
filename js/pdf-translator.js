@@ -18,7 +18,7 @@ const REF_HEADING_RE = /^(\d+\.?\s*)?(references?|bibliography|works cited|참�
 class PdfTranslatorEngine {
     constructor(options = {}) {
         this.apiKey = options.apiKey || '';
-        this.models = [
+        this.flashModels = [
             'gemini-flash-lite-latest',
             'gemini-3.5-flash-lite',
             'gemini-3.1-flash-lite',
@@ -29,6 +29,12 @@ class PdfTranslatorEngine {
             'gemini-3.5-flash',
             'gemini-flash-latest'
         ];
+        this.proModels = [
+            'gemini-pro-latest',
+            'gemini-3.1-pro-preview'
+        ];
+        this.modelTier = options.modelTier || 'flash';
+        this.models = this.getModelList(this.modelTier);
         this.currentModelIndex = 0;
         this.scale = options.scale || 2.0; // High-DPI for crisp text and formulas
         this.fontFamily = "'Noto Sans KR', 'Pretendard', 'Malgun Gothic', sans-serif";
@@ -41,6 +47,23 @@ class PdfTranslatorEngine {
         this.docState = { refStartPage: null };
         this._measureCtx = null;
         this._fontBoldCache = new Map();
+    }
+
+    setModelTier(tier) {
+        const normalized = tier === 'pro' ? 'pro' : 'flash';
+        if (this.modelTier !== normalized) {
+            this.modelTier = normalized;
+            this.models = this.getModelList(this.modelTier);
+            this.currentModelIndex = 0;
+        }
+    }
+
+    getModelList(tier) {
+        if (tier === 'pro') {
+            // Pro 선택 시: 최신 Pro 모델 우선 호출 -> 한도 초과/과부하 시 Flash 풀로 안전 폴백
+            return [...this.proModels, ...this.flashModels];
+        }
+        return [...this.flashModels];
     }
 
     setApiKey(key) {
@@ -80,6 +103,9 @@ class PdfTranslatorEngine {
      * options.onStatusUpdate  -> callback to report retry/fallback progress
      */
     async callGeminiTranslate(blocks, targetLang = 'ko', options = {}) {
+        if (options.modelTier) {
+            this.setModelTier(options.modelTier);
+        }
         const prompt = this.buildPrompt(blocks, targetLang, options);
         let lastError = null;
 
@@ -130,7 +156,8 @@ class PdfTranslatorEngine {
                         const isQuotaExceeded = errMsg.includes('quota') || errMsg.includes('exceeded') || errMsg.includes('limit:');
                         if (proxyResp.status === 429 && isQuotaExceeded) {
                             if (typeof options.onStatusUpdate === 'function') {
-                                options.onStatusUpdate(`모델 ${modelName} 일일 한도 도달 - 대체 Flash 모델로 즉시 전환 중...`);
+                                const nextModel = this.models[(this.currentModelIndex + i + 1) % this.models.length];
+                                options.onStatusUpdate(`모델 ${modelName} 한도 도달 - 대체 모델(${nextModel})로 즉시 전환 중...`);
                             }
                             lastError = new Error(`모델 ${modelName} 일일 쿼터 한도 초과`);
                             break; // 딜레이 없이 즉시 다음 모델로 전환
@@ -184,7 +211,8 @@ class PdfTranslatorEngine {
                             // 일일 쿼터 초과 시 즉시 다음 모델로 전환
                             if (response.status === 429 && (errMsg.includes('quota') || errMsg.includes('exceeded') || errMsg.includes('limit:'))) {
                                 if (typeof options.onStatusUpdate === 'function') {
-                                    options.onStatusUpdate(`모델 ${modelName} 일일 한도 도달 - 대체 Flash 모델로 즉시 전환 중...`);
+                                    const nextModel = this.models[(this.currentModelIndex + i + 1) % this.models.length];
+                                    options.onStatusUpdate(`모델 ${modelName} 한도 도달 - 대체 모델(${nextModel})로 즉시 전환 중...`);
                                 }
                                 lastError = new Error(`모델 ${modelName} 일일 쿼터 한도 초과`);
                                 break;

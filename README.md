@@ -82,9 +82,10 @@ java TranslateServer
 2. **수식 및 LaTeX 수식 기호 원형 유지**
    - 논문에 포함된 수식($E=mc^2, x, W, \theta$), 수식 번호((1), (2)), 참고문헌 인용구([1], [2-4]), 그림 캡션(Fig. 1)을 파괴하지 않고 원형 그대로 보존합니다.
 
-3. **최신 Gemini Flash AI 학술 번역 & 과부하 자동 복구(Resilience)**
-   - 구글의 최신 Gemini API를 사용하여 SCI급 학술 논문에 최적화된 고급 번역을 제공합니다.
-   - 트래픽 과밀(429/503) 시 **지수 백오프(Exponential Backoff)** 대기 및 6단계 대체 모델(`gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-1.5-flash` 등) 자동 순환 폴백으로 끊김 없는 번역을 지원합니다.
+3. **최신 Gemini Flash & Pro AI 학술 번역 & 과부하 자동 복구(Resilience)**
+   - **Flash (초고속 추천)** 및 **Pro (심층 정밀 학술 번역)** 모드를 자유롭게 선택할 수 있습니다.
+   - Pro 선택 시 최신 플래그십 모델(`gemini-pro-latest`, `gemini-3.1-pro-preview`)을 우선 활용하여 높은 번역 퀄리티를 보장합니다.
+   - 트래픽 과밀(429/503) 또는 일일 쿼터 초과 시 **지수 백오프(Exponential Backoff)** 및 고가용성 Flash 9종 풀 자동 순환 폴백으로 중단 없는 번역을 지원합니다.
 
 4. **연속 스크롤(Continuous Multi-Page Scroll) & 나란히 비교 동기화**
    - 페이지 넘김 버튼을 누르지 않아도 **마우스 휠이나 터치 스크롤로 모든 페이지를 연속으로 쭉 이어서 열람**할 수 있습니다.
@@ -129,7 +130,13 @@ Doct/
 
 > 💡 이전 버전의 전체 누적 변경 내역은 [CHANGELOG.md](CHANGELOG.md)에서 확인하실 수 있습니다.
 
-### [Latest] v1.4.0 (2026.10) - 연속 스크롤 뷰어 및 나란히 비교 양방향 동기화 스크롤
+### [Latest] v1.4.1 (2026.10) - Gemini Pro 정밀 번역 엔진 연동 및 Flash 하이브리드 폴백
+- 💎 **Gemini Pro 모델 엔진 연동**: '프로' 선택 시 최신 플래그십 Pro 모델(`gemini-pro-latest`, `gemini-3.1-pro-preview`)을 1순위로 우선 호출하여 심층 학술 번역 지원.
+- 🛡️ **하이브리드 자동 순환 폴백 (Hybrid Resilience)**: Pro 모델 쿼터 소진 시 대기 없이 즉시 Flash 9종 풀로 자동 순환 폴백되어 끊김 없는 번역 완료 보장.
+
+---
+
+### v1.4.0 (2026.10) - 연속 스크롤 뷰어 및 나란히 비교 양방향 동기화 스크롤
 - 📜 **연속 스크롤(Continuous Multi-Page Scroll) 도입**: 페이지 넘김 버튼(`nextPageBtn`)을 누르지 않고도 마우스 휠 및 터치 스크롤로 모든 페이지를 연속으로 쭉 이어서 열람 가능.
 - 🔄 **나란히 비교(Dual View) 양방향 동기화 스크롤**: 원본(Original)과 번역본(Translated) 양면 컬럼이 1:1로 함께 스크롤되어 문단 위치가 항상 일치.
 - ⚡ **스마트 지연 렌더링 & 실시간 페이지 툴바 연동**: IntersectionObserver 기반으로 화면 근처 페이지만 지연 렌더링하여 빠른 속도를 유지하고, 스크롤 위치에 맞춰 툴바 페이지 표시기(`2 / 5`) 자동 갱신.

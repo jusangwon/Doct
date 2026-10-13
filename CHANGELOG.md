@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.4.1] - 2026-10-14
+
+### 💎 Added & Connected (Gemini Pro 정밀 번역 엔진 연동 및 Flash 하이브리드 폴백)
+- **Gemini Pro 모델 엔진 정식 연동**:
+  - UI 상의 `Gemini Pro` 선택 옵션이 실제 엔진과 연동되지 않던 문제를 해결.
+  - '프로' 선택 시 최신 플래그십 Pro 모델군인 **`gemini-pro-latest`** (1순위) 및 **`gemini-3.1-pro-preview`** (2순위)가 최우선으로 호출되어 심층 학술 맥락과 고품질 문장 번역 제공.
+- **Pro 쿼터 초과 시 Flash 자동 순환 폴백 (Hybrid Resilience)**:
+  - 무료 티어 제한(Pro 쿼터 한도 등) 또는 트래픽 과부하(429/503) 발생 시, 지연 없이 즉시 검증된 Flash 9종 풀로 자동 순환 폴백되어 번역 중단 현상 방지.
+
+---
+
 ## [v1.4.0] - 2026-10-13
 
 ### 📜 Added (연속 스크롤 뷰어 및 나란히 비교 양방향 동기화)
