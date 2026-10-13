@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v1.3.1] - 2026-10-13
+
+### ⚡ Improved & Resilient (Gemini 모델 과부하 자동 복구 및 안정성 강화)
+- **지수 백오프(Exponential Backoff) 자동 재시도**: Gemini API 429(Rate Limit) 또는 503(Overloaded) 발생 시 즉시 실패하지 않고 1.0~1.5초 지수 백오프 대기 후 1회 자동 재시도.
+- **6단계 다중 모델 연속 폴백(Fallback) 체계**: 특정 모델 과부하 지속 시 차세대 고성능 모델군(`gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-2.0-flash-lite` → `gemini-1.5-flash` → `gemini-3.5-flash` → `gemini-3.8-flash`)으로 자동 전환하여 중단 없는 번역 보장.
+- **실시간 과부하 복구 상태 안내 UI**: 과부하 감지 및 재시도 대기 상태를 번역 진행창에 실시간 텍스트(`모델 일시적 과부하 감지 - N초 후 자동 재시도...`)로 투명하게 표시.
+
+---
+
 ## [v1.3.0] - 2026-10-13
 
 ### 📱 Added (모바일 최적화 및 안내)

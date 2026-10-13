@@ -764,7 +764,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 for (let c = 0; c < translatable.length; c += chunkSize) {
                     if (state.shouldCancel) break;
                     const chunk = translatable.slice(c, c + chunkSize);
-                    const results = await engine.callGeminiTranslate(chunk, targetLang);
+                    const results = await engine.callGeminiTranslate(chunk, targetLang, {
+                        onStatusUpdate: (msg) => {
+                            if (progressStatusText) progressStatusText.textContent = msg;
+                        }
+                    });
                     collect(results, translationsMap);
                 }
 
@@ -782,7 +786,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         try {
                             const results = await engine.callGeminiTranslate(chunk, targetLang, {
                                 shorten: true,
-                                currentTranslations: translationsMap
+                                currentTranslations: translationsMap,
+                                onStatusUpdate: (msg) => {
+                                    if (progressStatusText) progressStatusText.textContent = msg;
+                                }
                             });
                             collect(results, translationsMap);
                         } catch (e) {

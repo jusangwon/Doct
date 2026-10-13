@@ -19,11 +19,12 @@ class PdfTranslatorEngine {
     constructor(options = {}) {
         this.apiKey = options.apiKey || '';
         this.models = [
+            'gemini-2.5-flash',
+            'gemini-2.0-flash',
+            'gemini-2.0-flash-lite',
+            'gemini-1.5-flash',
             'gemini-3.5-flash',
-            'gemini-3.8-flash',
-            'gemini-3.1-flash-lite',
-            'gemini-3.8-flash-lite',
-            'gemini-2.5-flash-lite'
+            'gemini-3.8-flash'
         ];
         this.currentModelIndex = 0;
         this.scale = options.scale || 2.0; // High-DPI for crisp text and formulas
@@ -52,6 +53,10 @@ class PdfTranslatorEngine {
         this._fontBoldCache.clear();
     }
 
+    _sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     async ensureFonts() {
         try {
             if (document.fonts && document.fonts.load) {
@@ -67,8 +72,9 @@ class PdfTranslatorEngine {
     // =========================================================================
 
     /**
-     * Call Gemini API (Prioritizes secure /api/translate serverless proxy)
+     * Call Gemini API with Exponential Backoff & Multi-Model Fallback Queue
      * options.shorten = true  -> ask for shorter rewrites of options.currentTranslations
+     * options.onStatusUpdate  -> callback to report retry/fallback progress
      */
     async callGeminiTranslate(blocks, targetLang = 'ko', options = {}) {
         const prompt = this.buildPrompt(blocks, targetLang, options);
@@ -86,78 +92,102 @@ class PdfTranslatorEngine {
                 }
             };
 
-            // 1. 보안 서버리스 프록시 (/api/translate) 우선 호출
-            try {
-                const proxyResp = await fetch('/api/translate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+            // 모델별 최대 2회 시도 (과부하 발생 시 1.5초 지수 백오프 후 1회 재시도, 지속 실패 시 다음 모델로 전환)
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                // 1. 보안 서버리스 프록시 (/api/translate) 우선 호출
+                try {
+                    const proxyResp = await fetch('/api/translate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
 
-                if (proxyResp.ok) {
-                    const data = await proxyResp.json();
-                    const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (contentText) {
+                    if (proxyResp.ok) {
+                        const data = await proxyResp.json();
+                        const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (contentText) {
+                            const translations = JSON.parse(contentText);
+                            this.currentModelIndex = (this.currentModelIndex + i) % this.models.length;
+                            return translations;
+                        }
+                    } else if (proxyResp.status === 404 && this.apiKey) {
+                        console.log('/api/translate 미지원 환경 - 클라이언트 직접 호출로 폴백합니다.');
+                    } else {
+                        const errJson = await proxyResp.json().catch(() => ({}));
+                        console.warn(`Proxy attempt with ${modelName} (시도 ${attempt}) returned ${proxyResp.status}:`, errJson);
+
+                        // 일시적 과부하 (429 Rate Limit, 503 Overloaded, 500) 감지 시 지수 백오프 대기
+                        if (proxyResp.status === 429 || proxyResp.status === 503 || proxyResp.status === 500) {
+                            const backoffMs = (proxyResp.status === 429 ? 1500 : 1000) * attempt;
+                            if (typeof options.onStatusUpdate === 'function') {
+                                options.onStatusUpdate(`모델 ${modelName} 일시적 과부하 (${proxyResp.status}) 감지 - ${Math.round(backoffMs / 100) / 10}초 후 자동 재시도...`);
+                            }
+                            await this._sleep(backoffMs);
+
+                            if (attempt < 2) {
+                                continue; // 동일 모델로 1회 더 재시도
+                            } else {
+                                lastError = new Error(`모델 ${modelName} 일시적 과부하 (${proxyResp.status})`);
+                                break; // 다음 대체 모델로 순환
+                            }
+                        }
+                    }
+                } catch (proxyErr) {
+                    console.log('Proxy request failed, checking direct client call:', proxyErr);
+                }
+
+                // 2. 폴백: 클라이언트에 직접 키가 있는 경우 구글 엔드포인트 직접 호출
+                if (this.apiKey) {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${this.apiKey}`;
+                    const directPayload = {
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: payload.generationConfig
+                    };
+
+                    try {
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(directPayload)
+                        });
+
+                        if (response.status === 429 || response.status === 503) {
+                            const errText = await response.text();
+                            console.warn(`Direct model ${modelName} (시도 ${attempt}) returned ${response.status}:`, errText);
+                            const backoffMs = (response.status === 429 ? 1500 : 1000) * attempt;
+
+                            if (typeof options.onStatusUpdate === 'function') {
+                                options.onStatusUpdate(`모델 ${modelName} 일시적 과부하 (${response.status}) 감지 - ${Math.round(backoffMs / 100) / 10}초 후 자동 재시도...`);
+                            }
+                            await this._sleep(backoffMs);
+
+                            if (attempt < 2) {
+                                continue;
+                            } else {
+                                lastError = new Error(`모델 ${modelName} 응답 실패 (${response.status})`);
+                                break;
+                            }
+                        }
+
+                        if (!response.ok) {
+                            const errData = await response.json().catch(() => ({}));
+                            const msg = errData?.error?.message || `HTTP ${response.status}`;
+                            throw new Error(`Gemini API 오류 (${msg})`);
+                        }
+
+                        const data = await response.json();
+                        const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (!contentText) {
+                            throw new Error('Gemini 응답 내용이 비어있습니다.');
+                        }
+
                         const translations = JSON.parse(contentText);
                         this.currentModelIndex = (this.currentModelIndex + i) % this.models.length;
                         return translations;
+                    } catch (err) {
+                        lastError = err;
+                        console.warn(`Direct attempt with ${modelName} failed:`, err);
                     }
-                } else if (proxyResp.status === 404 && this.apiKey) {
-                    // 정적 로컬 실행 등 프록시 엔드포인트가 없을 때 직접 호출로 폴백
-                    console.log('/api/translate 미지원 환경 - 클라이언트 직접 호출로 폴백합니다.');
-                } else {
-                    const errJson = await proxyResp.json().catch(() => ({}));
-                    console.warn(`Proxy attempt with ${modelName} returned ${proxyResp.status}:`, errJson);
-                    // 모델 관련 에러(429, 503 등)일 경우 다음 모델 시도
-                    if (proxyResp.status === 429 || proxyResp.status === 503) {
-                        lastError = new Error(`모델 ${modelName} 일시적 과부하 (${proxyResp.status})`);
-                        continue;
-                    }
-                }
-            } catch (proxyErr) {
-                console.log('Proxy request failed, checking direct client call:', proxyErr);
-            }
-
-            // 2. 폴백: 클라이언트에 키가 있는 경우 구글 엔드포인트 직접 호출
-            if (this.apiKey) {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${this.apiKey}`;
-                const directPayload = {
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: payload.generationConfig
-                };
-
-                try {
-                    const response = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(directPayload)
-                    });
-
-                    if (response.status === 404 || response.status === 503 || response.status === 429) {
-                        const errText = await response.text();
-                        console.warn(`Model ${modelName} returned ${response.status}, trying fallback...`, errText);
-                        lastError = new Error(`모델 ${modelName} 응답 실패 (${response.status})`);
-                        continue;
-                    }
-
-                    if (!response.ok) {
-                        const errData = await response.json().catch(() => ({}));
-                        const msg = errData?.error?.message || `HTTP ${response.status}`;
-                        throw new Error(`Gemini API 오류 (${msg})`);
-                    }
-
-                    const data = await response.json();
-                    const contentText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (!contentText) {
-                        throw new Error('Gemini 응답 내용이 비어있습니다.');
-                    }
-
-                    const translations = JSON.parse(contentText);
-                    this.currentModelIndex = (this.currentModelIndex + i) % this.models.length;
-                    return translations;
-                } catch (err) {
-                    lastError = err;
-                    console.warn(`Direct attempt with ${modelName} failed:`, err);
                 }
             }
         }
