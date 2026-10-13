@@ -1,0 +1,9 @@
+# Environment Variables
+.env
+.env.local
+
+# Java compiled files
+*.class
+
+# Temporary & Key files
+apikey/
