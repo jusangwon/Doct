@@ -97,6 +97,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const tooltipOrig = document.getElementById('tooltipOrig');
     const tooltipTrans = document.getElementById('tooltipTrans');
 
+    const mobileNoticeBar = document.getElementById('mobileNoticeBar');
+    const mobileQuickCopyBtn = document.getElementById('mobileQuickCopyBtn');
+    const mobileGuideModalOverlay = document.getElementById('mobileGuideModalOverlay');
+    const closeMobileGuideBtn = document.getElementById('closeMobileGuideBtn');
+    const copyPcLinkBtn = document.getElementById('copyPcLinkBtn');
+    const continueMobileBtn = document.getElementById('continueMobileBtn');
+    const mobileCopyToast = document.getElementById('mobileCopyToast');
+
     // =========================================================================
     // 1. API Key Loading (.env support)
     // =========================================================================
@@ -1048,6 +1056,76 @@ document.addEventListener('DOMContentLoaded', () => {
         previewEmpty.scrollIntoView({ behavior: 'smooth' });
     });
 
-    // Initialize Key
+    // =========================================================================
+    // 6. Mobile Experience & Guidance
+    // =========================================================================
+    function isMobileDevice() {
+        return window.innerWidth <= 768 || /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    }
+
+    function checkMobileGuidance() {
+        if (!isMobileDevice()) return;
+
+        // 모바일 접속 시 화면 너비 제약으로 기본 뷰를 '단일 보기'로 최적화
+        state.viewMode = 'single';
+        viewModeTabs.querySelectorAll('.view-mode-tab').forEach(t => {
+            t.classList.toggle('active', t.dataset.mode === 'single');
+        });
+
+        // 이번 방문 중 첫 접속인지 확인
+        const hasSeenMobileGuide = sessionStorage.getItem('doct_mobile_guide_seen');
+        if (!hasSeenMobileGuide && mobileGuideModalOverlay) {
+            mobileGuideModalOverlay.style.display = 'flex';
+        }
+    }
+
+    function copyCurrentUrl(toastEl) {
+        const url = window.location.href;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(url).then(() => {
+                if (toastEl) {
+                    toastEl.style.display = 'block';
+                    setTimeout(() => {
+                        toastEl.style.display = 'none';
+                    }, 4000);
+                } else {
+                    alert('링크가 복사되었습니다! PC 브라우저에 붙여넣어 열어보세요.');
+                }
+            }).catch(() => {
+                prompt('아래 링크를 복사하여 PC에서 열어보세요:', url);
+            });
+        } else {
+            prompt('아래 링크를 복사하여 PC에서 열어보세요:', url);
+        }
+    }
+
+    if (copyPcLinkBtn) {
+        copyPcLinkBtn.addEventListener('click', () => {
+            copyCurrentUrl(mobileCopyToast);
+        });
+    }
+
+    if (mobileQuickCopyBtn) {
+        mobileQuickCopyBtn.addEventListener('click', () => {
+            copyCurrentUrl();
+        });
+    }
+
+    if (continueMobileBtn) {
+        continueMobileBtn.addEventListener('click', () => {
+            sessionStorage.setItem('doct_mobile_guide_seen', 'true');
+            if (mobileGuideModalOverlay) mobileGuideModalOverlay.style.display = 'none';
+        });
+    }
+
+    if (closeMobileGuideBtn) {
+        closeMobileGuideBtn.addEventListener('click', () => {
+            sessionStorage.setItem('doct_mobile_guide_seen', 'true');
+            if (mobileGuideModalOverlay) mobileGuideModalOverlay.style.display = 'none';
+        });
+    }
+
+    // Initialize Key & Device Mode
     loadApiKey();
+    checkMobileGuidance();
 });
