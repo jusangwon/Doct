@@ -19,12 +19,15 @@ class PdfTranslatorEngine {
     constructor(options = {}) {
         this.apiKey = options.apiKey || '';
         this.models = [
-            'gemini-2.5-flash',
-            'gemini-2.0-flash',
-            'gemini-2.0-flash-lite',
-            'gemini-1.5-flash',
+            'gemini-flash-lite-latest',
+            'gemini-3.5-flash-lite',
+            'gemini-3.1-flash-lite',
+            'gemini-3-flash-preview',
+            'gemini-3.8-flash',
+            'gemini-3.7-flash',
+            'gemini-3.6-flash',
             'gemini-3.5-flash',
-            'gemini-3.8-flash'
+            'gemini-flash-latest'
         ];
         this.currentModelIndex = 0;
         this.scale = options.scale || 2.0; // High-DPI for crisp text and formulas
@@ -114,11 +117,28 @@ class PdfTranslatorEngine {
                         console.log('/api/translate 미지원 환경 - 클라이언트 직접 호출로 폴백합니다.');
                     } else {
                         const errJson = await proxyResp.json().catch(() => ({}));
+                        const errMsg = (errJson?.error?.message || errJson?.error || JSON.stringify(errJson)).toLowerCase();
                         console.warn(`Proxy attempt with ${modelName} (시도 ${attempt}) returned ${proxyResp.status}:`, errJson);
 
-                        // 일시적 과부하 (429 Rate Limit, 503 Overloaded, 500) 감지 시 지수 백오프 대기
+                        // 1) 404 Not Found (지원 종료된 모델): 재시도 없이 즉시 다음 모델로 전환
+                        if (proxyResp.status === 404) {
+                            lastError = new Error(`모델 ${modelName} 미지원 (${proxyResp.status})`);
+                            break;
+                        }
+
+                        // 2) 일일 쿼터 초과 (Quota exceeded / limit: 20 등): 재시도해도 불가하므로 지연 없이 즉시 다음 모델로 전환
+                        const isQuotaExceeded = errMsg.includes('quota') || errMsg.includes('exceeded') || errMsg.includes('limit:');
+                        if (proxyResp.status === 429 && isQuotaExceeded) {
+                            if (typeof options.onStatusUpdate === 'function') {
+                                options.onStatusUpdate(`모델 ${modelName} 일일 한도 도달 - 대체 Flash 모델로 즉시 전환 중...`);
+                            }
+                            lastError = new Error(`모델 ${modelName} 일일 쿼터 한도 초과`);
+                            break; // 딜레이 없이 즉시 다음 모델로 전환
+                        }
+
+                        // 3) 일시적 과부하 (503 Overloaded, 순간 429 Rate Limit, 500 등): 지수 백오프 대기 후 1회 재시도
                         if (proxyResp.status === 429 || proxyResp.status === 503 || proxyResp.status === 500) {
-                            const backoffMs = (proxyResp.status === 429 ? 1500 : 1000) * attempt;
+                            const backoffMs = (proxyResp.status === 429 ? 1200 : 1000) * attempt;
                             if (typeof options.onStatusUpdate === 'function') {
                                 options.onStatusUpdate(`모델 ${modelName} 일시적 과부하 (${proxyResp.status}) 감지 - ${Math.round(backoffMs / 100) / 10}초 후 자동 재시도...`);
                             }
@@ -151,10 +171,26 @@ class PdfTranslatorEngine {
                             body: JSON.stringify(directPayload)
                         });
 
+                        if (response.status === 404) {
+                            lastError = new Error(`모델 ${modelName} 미지원 (404)`);
+                            break;
+                        }
+
                         if (response.status === 429 || response.status === 503) {
                             const errText = await response.text();
                             console.warn(`Direct model ${modelName} (시도 ${attempt}) returned ${response.status}:`, errText);
-                            const backoffMs = (response.status === 429 ? 1500 : 1000) * attempt;
+                            const errMsg = errText.toLowerCase();
+
+                            // 일일 쿼터 초과 시 즉시 다음 모델로 전환
+                            if (response.status === 429 && (errMsg.includes('quota') || errMsg.includes('exceeded') || errMsg.includes('limit:'))) {
+                                if (typeof options.onStatusUpdate === 'function') {
+                                    options.onStatusUpdate(`모델 ${modelName} 일일 한도 도달 - 대체 Flash 모델로 즉시 전환 중...`);
+                                }
+                                lastError = new Error(`모델 ${modelName} 일일 쿼터 한도 초과`);
+                                break;
+                            }
+
+                            const backoffMs = (response.status === 429 ? 1200 : 1000) * attempt;
 
                             if (typeof options.onStatusUpdate === 'function') {
                                 options.onStatusUpdate(`모델 ${modelName} 일시적 과부하 (${response.status}) 감지 - ${Math.round(backoffMs / 100) / 10}초 후 자동 재시도...`);

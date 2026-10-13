@@ -96,7 +96,7 @@ const server = http.createServer(async (req, res) => {
         req.on('end', async () => {
             try {
                 const parsed = JSON.parse(bodyData || '{}');
-                const { prompt, model = 'gemini-2.5-flash', contents, generationConfig } = parsed;
+                const { prompt, model = 'gemini-flash-lite-latest', contents, generationConfig } = parsed;
 
                 if (!prompt && !contents) {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -112,7 +112,7 @@ const server = http.createServer(async (req, res) => {
                     }
                 };
 
-                const targetModel = model || 'gemini-2.5-flash';
+                const targetModel = model || 'gemini-flash-lite-latest';
                 const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(targetModel)}:generateContent?key=${apiKey}`;
 
                 const geminiRes = await fetch(geminiUrl, {

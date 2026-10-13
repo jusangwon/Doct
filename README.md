@@ -2,7 +2,7 @@
 > **원본 레이아웃과 서식(수식, 도표, 2단 다단)을 100% 보존하는 AI 논문 번역기**
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-웹에서%20바로%20사용하기-2563eb?style=for-the-badge&logo=googlechrome&logoColor=white)](https://doct-kn62.onrender.com/)
-[![Version](https://img.shields.io/badge/version-v1.3.1-emerald?style=for-the-badge)]()
+[![Version](https://img.shields.io/badge/version-v1.3.2-emerald?style=for-the-badge)]()
 [![License](https://img.shields.io/badge/license-MIT-slate?style=for-the-badge)]()
 
 ### 🌐 [온라인 웹 서비스 바로가기 (클릭)]: https://doct-kn62.onrender.com/
@@ -127,8 +127,8 @@ Doct/
 
 > 💡 이전 버전의 전체 누적 변경 내역은 [CHANGELOG.md](CHANGELOG.md)에서 확인하실 수 있습니다.
 
-### [Latest] v1.3.1 (2026.10) - Gemini 모델 과부하 자동 복구 및 온라인 서비스 오픈
-- 🌐 **웹 서비스 배포 링크 공개**: 별도 설치 없이 즉시 사용할 수 있는 공식 웹 서비스([https://doct-kn62.onrender.com/](https://doct-kn62.onrender.com/)) 오픈.
-- ⚡ **지수 백오프(Exponential Backoff) 자동 재시도**: Gemini API 429(Rate Limit) 또는 503(Overloaded) 발생 시 즉시 실패하지 않고 1.0~1.5초 지수 백오프 대기 후 1회 자동 재시도.
-- 🔄 **6단계 다중 모델 연속 폴백(Fallback) 체계**: 특정 모델 과부하 지속 시 차세대 고성능 모델군(`gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-2.0-flash-lite` → `gemini-1.5-flash` → `gemini-3.5-flash` → `gemini-3.8-flash`)으로 자동 전환하여 중단 없는 번역 보장.
-- 💬 **실시간 과부하 복구 상태 안내 UI**: 과부하 감지 및 재시도 대기 상태를 번역 진행창에 실시간 텍스트(`모델 일시적 과부하 감지 - N초 후 자동 재시도...`)로 투명하게 표시.
+### [Latest] v1.3.2 (2026.10) - Gemini Flash 9종 풀 확장 및 즉시 전환 최적화
+- 🔄 **가용 Gemini Flash 9종 풀(Pool) 전면 개편**: 404 종료 모델을 제거하고 최신 검증 모델군(`gemini-flash-lite-latest`, `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`, `gemini-3-flash-preview`, `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.6-flash`, `gemini-3.5-flash`, `gemini-flash-latest`) 총 9개로 모델 풀 대폭 확대.
+- ⚡ **일일 쿼터 초과 시 즉시 전환 (Fast-Failover)**: 무료 한도 소진(`Quota exceeded`) 감지 시 대기 지연 없이 즉시 다음 정상 Flash 모델로 패스하여 불필요한 대기 시간 제거.
+- 🚀 **서버 기본 모델 최신화**: `server.js` 기본 폴백 모델을 고가용성의 `gemini-flash-lite-latest`로 교체.
+
