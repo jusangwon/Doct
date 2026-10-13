@@ -86,6 +86,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const bannerScopeTranslatedLabel = document.getElementById('bannerScopeTranslatedLabel');
     const bannerScopeAllLabel = document.getElementById('bannerScopeAllLabel');
     const compareViewBtn = document.getElementById('compareViewBtn');
+    const previewCard = document.getElementById('previewCard');
+    const previewBody = document.getElementById('previewBody');
+    const dualOrigPane = document.getElementById('dualOrigPane');
+    const toggleFullscreenBtn = document.getElementById('toggleFullscreenBtn');
+    const fullscreenBtnText = document.getElementById('fullscreenBtnText');
+    const iconExpand = toggleFullscreenBtn?.querySelector('.icon-expand');
+    const iconCompress = toggleFullscreenBtn?.querySelector('.icon-compress');
     const bilingualTooltip = document.getElementById('bilingualTooltip');
     const tooltipOrig = document.getElementById('tooltipOrig');
     const tooltipTrans = document.getElementById('tooltipTrans');
@@ -529,10 +536,82 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    fitWidthBtn.addEventListener('click', () => {
-        state.zoom = 1.0;
-        zoomLevelText.textContent = '100%';
+    function autoFitWidth() {
+        const pageData = state.pagesData[state.currentPage];
+        if (!pageData || !pageData.originalCanvas) {
+            state.zoom = 1.0;
+            zoomLevelText.textContent = '100%';
+            renderViewMode();
+            return;
+        }
+
+        const origW = pageData.originalCanvas.width / engine.scale;
+        if (!origW || origW <= 0) return;
+
+        let targetZoom = 1.0;
+        if (state.viewMode === 'dual') {
+            const paneW = dualOrigPane ? (dualOrigPane.clientWidth - 48) : ((previewBody.clientWidth / 2) - 48);
+            if (paneW > 100) {
+                targetZoom = Math.floor((paneW / origW) * 100) / 100;
+            }
+        } else {
+            const bodyW = previewBody.clientWidth - 64;
+            if (bodyW > 100) {
+                targetZoom = Math.floor((bodyW / origW) * 100) / 100;
+            }
+        }
+
+        targetZoom = Math.max(0.4, Math.min(2.5, targetZoom));
+        state.zoom = targetZoom;
+        zoomLevelText.textContent = `${Math.round(state.zoom * 100)}%`;
         renderViewMode();
+    }
+
+    fitWidthBtn.addEventListener('click', autoFitWidth);
+
+    // Fullscreen View Mode Toggle
+    function toggleFullscreen(forceState) {
+        if (!previewCard) return;
+        const isCurrentlyFull = previewCard.classList.contains('fullscreen-mode');
+        const willBeFull = typeof forceState === 'boolean' ? forceState : !isCurrentlyFull;
+
+        if (willBeFull) {
+            previewCard.classList.add('fullscreen-mode');
+            if (iconExpand) iconExpand.style.display = 'none';
+            if (iconCompress) iconCompress.style.display = 'inline-block';
+            if (fullscreenBtnText) fullscreenBtnText.textContent = '원래 크기로 [ESC]';
+            document.body.style.overflow = 'hidden';
+            setTimeout(() => {
+                autoFitWidth();
+            }, 60);
+        } else {
+            previewCard.classList.remove('fullscreen-mode');
+            if (iconExpand) iconExpand.style.display = 'inline-block';
+            if (iconCompress) iconCompress.style.display = 'none';
+            if (fullscreenBtnText) fullscreenBtnText.textContent = '전체화면 크게보기';
+            document.body.style.overflow = '';
+            setTimeout(() => {
+                autoFitWidth();
+            }, 60);
+        }
+    }
+
+    if (toggleFullscreenBtn) {
+        toggleFullscreenBtn.addEventListener('click', () => toggleFullscreen());
+    }
+
+    // ESC to exit fullscreen
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && previewCard?.classList.contains('fullscreen-mode')) {
+            toggleFullscreen(false);
+        }
+    });
+
+    // Window resize handler
+    window.addEventListener('resize', () => {
+        if (previewCard?.classList.contains('fullscreen-mode')) {
+            renderViewMode();
+        }
     });
 
     // Page Range Radio

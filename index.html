@@ -131,7 +131,7 @@
         <div class="workspace-grid">
             
             <!-- Left: PDF Interactive Preview & Comparison -->
-            <section class="preview-card" aria-label="PDF 미리보기 및 대조">
+            <section class="preview-card" id="previewCard" aria-label="PDF 미리보기 및 대조">
                 <div class="preview-header">
                     <div class="preview-title-area">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -171,6 +171,24 @@
                         </button>
                         <button type="button" class="tool-btn" id="fitWidthBtn" title="가로 맞춤">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                        </button>
+                    </div>
+
+                    <div class="expand-controls">
+                        <button type="button" class="tool-btn-expand" id="toggleFullscreenBtn" title="전체 웹화면으로 크게보기 (ESC로 복귀)">
+                            <svg class="icon-expand" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                                <polyline points="15 3 21 3 21 9"/>
+                                <polyline points="9 21 3 21 3 15"/>
+                                <line x1="21" y1="3" x2="14" y2="10"/>
+                                <line x1="3" y1="21" x2="10" y2="14"/>
+                            </svg>
+                            <svg class="icon-compress" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="display: none;">
+                                <polyline points="4 14 10 14 10 20"/>
+                                <polyline points="20 10 14 10 14 4"/>
+                                <line x1="14" y1="10" x2="21" y2="3"/>
+                                <line x1="3" y1="21" x2="10" y2="14"/>
+                            </svg>
+                            <span id="fullscreenBtnText">전체화면 크게보기</span>
                         </button>
                     </div>
                 </div>
