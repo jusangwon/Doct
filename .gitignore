@@ -7,3 +7,11 @@
 
 # Temporary & Key files
 apikey/
+
+# Private Deployment Guides & Docs (Do not push to GitHub)
+DEPLOY_GUIDE.md
+*GUIDE*.md
+*_files/
+*.html.files/
+
+

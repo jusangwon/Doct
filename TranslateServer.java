@@ -2,11 +2,17 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
+import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,6 +45,9 @@ public class TranslateServer {
         
         // API Endpoint: /api/key
         server.createContext("/api/key", new ApiKeyHandler());
+
+        // API Endpoint: /api/translate (보안 번역 프록시)
+        server.createContext("/api/translate", new TranslateHandler());
         
         // API Endpoint: /api/health
         server.createContext("/api/health", exchange -> {
@@ -177,6 +186,121 @@ public class TranslateServer {
         private String escapeJson(String s) {
             if (s == null) return "";
             return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "").replace("\r", "");
+        }
+    }
+
+    static class TranslateHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(200, -1);
+                return;
+            }
+
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                byte[] err = "{\"error\":\"Method Not Allowed\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(405, err.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+                return;
+            }
+
+            ApiKeyHandler keyHandler = new ApiKeyHandler();
+            String apiKey = keyHandler.loadApiKey();
+            if (apiKey.isEmpty()) {
+                byte[] err = "{\"error\":\".env 파일에 GEMINI_API_KEY가 설정되어 있지 않습니다.\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(500, err.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+                return;
+            }
+
+            // 요청 바디 읽기
+            String reqBody;
+            try (InputStream is = exchange.getRequestBody();
+                 BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line).append("\n");
+                }
+                reqBody = sb.toString();
+            }
+
+            // 모델 파싱 (기본값 gemini-2.5-flash)
+            String model = "gemini-2.5-flash";
+            int modelIdx = reqBody.indexOf("\"model\"");
+            if (modelIdx != -1) {
+                int colonIdx = reqBody.indexOf(':', modelIdx);
+                int quote1 = reqBody.indexOf('"', colonIdx);
+                if (quote1 != -1) {
+                    int quote2 = reqBody.indexOf('"', quote1 + 1);
+                    if (quote2 != -1) {
+                        model = reqBody.substring(quote1 + 1, quote2);
+                    }
+                }
+            }
+
+            // prompt 파싱 및 Gemini API 요청 바디 구성
+            String geminiPayload = reqBody;
+            int promptIdx = reqBody.indexOf("\"prompt\"");
+            if (promptIdx != -1 && !reqBody.contains("\"contents\"")) {
+                int colonIdx = reqBody.indexOf(':', promptIdx);
+                int quote1 = reqBody.indexOf('"', colonIdx);
+                // JSON 문자열 파싱 (이스케이프 고려)
+                int quote2 = -1;
+                for (int i = quote1 + 1; i < reqBody.length(); i++) {
+                    if (reqBody.charAt(i) == '"' && reqBody.charAt(i - 1) != '\\') {
+                        quote2 = i;
+                        break;
+                    }
+                }
+                if (quote1 != -1 && quote2 != -1) {
+                    String promptText = reqBody.substring(quote1 + 1, quote2);
+                    geminiPayload = "{\"contents\":[{\"parts\":[{\"text\":\"" + promptText + "\"}]}],\"generationConfig\":{\"responseMimeType\":\"application/json\",\"temperature\":0.15}}";
+                }
+            }
+
+            // Gemini API 호출
+            try {
+                String targetUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + 
+                                   URLEncoder.encode(model, "UTF-8") + ":generateContent?key=" + apiKey;
+                URL url = new URL(targetUrl);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(30000);
+                conn.setReadTimeout(60000);
+
+                byte[] outBytes = geminiPayload.getBytes(StandardCharsets.UTF_8);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(outBytes);
+                }
+
+                int statusCode = conn.getResponseCode();
+                InputStream stream = (statusCode >= 200 && statusCode < 300) ? conn.getInputStream() : conn.getErrorStream();
+                byte[] respBytes;
+                if (stream != null) {
+                    try (InputStream is = stream) {
+                        respBytes = is.readAllBytes();
+                    }
+                } else {
+                    respBytes = "{\"error\":\"Empty response from Gemini\"}".getBytes(StandardCharsets.UTF_8);
+                }
+
+                exchange.sendResponseHeaders(statusCode, respBytes.length);
+                try (OutputStream os = exchange.getResponseBody()) {
+                    os.write(respBytes);
+                }
+            } catch (Exception ex) {
+                byte[] err = ("{\"error\":\"" + keyHandler.escapeJson(ex.getMessage()) + "\"}").getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(500, err.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(err); }
+            }
         }
     }
 }
