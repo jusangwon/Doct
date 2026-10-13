@@ -11,6 +11,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -273,8 +274,8 @@ public class TranslateServer {
             // Gemini API 호출
             try {
                 String targetUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + 
-                                   URLEncoder.encode(model, "UTF-8") + ":generateContent?key=" + apiKey;
-                URL url = new URL(targetUrl);
+                                   URLEncoder.encode(model, StandardCharsets.UTF_8) + ":generateContent?key=" + apiKey;
+                URL url = URI.create(targetUrl).toURL();
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
