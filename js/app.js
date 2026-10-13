@@ -323,6 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function resetFileState() {
+        engine.resetDocState();
         state.pdfDoc = null;
         state.pdfFileName = '';
         state.pdfFileBytes = null;
@@ -361,12 +362,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!pageData || !pageData.originalCanvas) {
             const pdfPage = await state.pdfDoc.getPage(pageNum);
             const { canvas, viewport } = await engine.renderOriginalPage(pdfPage, engine.scale);
-            const { blocks } = await engine.extractPageBlocks(pdfPage, viewport);
+            const info = await engine.extractPageBlocks(pdfPage, viewport, { pageNum });
 
             pageData = {
                 originalCanvas: canvas,
                 transCanvas: null,
-                blocks: blocks,
+                blocks: info.blocks,
+                figures: info.figures,
+                bodyFont: info.bodyFont,
+                pageNum: pageNum,
                 translationsMap: null,
                 viewport: viewport
             };
@@ -593,8 +597,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const targetLang = targetLangSelect.value;
         const totalTarget = targetPages.length;
+        const chkFig = document.getElementById('chkFigureTextKeep');
+        const chkRef = document.getElementById('chkRefPreserve');
+        engine.setOptions({
+            translateFigureText: chkFig ? !chkFig.checked : false,
+            translateReferences: chkRef ? !chkRef.checked : false
+        });
+        let keptOriginalCount = 0;
 
         try {
+            await engine.ensureFonts();
             for (let idx = 0; idx < totalTarget; idx++) {
                 if (state.shouldCancel) {
                     alert('번역이 취소되었습니다.');
@@ -611,11 +623,14 @@ document.addEventListener('DOMContentLoaded', () => {
                     progressStepTitle.textContent = `[1/3] 페이지 ${pageNum} 레이아웃 및 2단 컬럼 파싱`;
                     const pdfPage = await state.pdfDoc.getPage(pageNum);
                     const { canvas, viewport } = await engine.renderOriginalPage(pdfPage, engine.scale);
-                    const { blocks } = await engine.extractPageBlocks(pdfPage, viewport);
+                    const info = await engine.extractPageBlocks(pdfPage, viewport, { pageNum });
                     pageData = {
                         originalCanvas: canvas,
                         transCanvas: null,
-                        blocks: blocks,
+                        blocks: info.blocks,
+                        figures: info.figures,
+                        bodyFont: info.bodyFont,
+                        pageNum: pageNum,
                         translationsMap: null,
                         viewport: viewport
                     };
@@ -629,23 +644,55 @@ document.addEventListener('DOMContentLoaded', () => {
                     continue;
                 }
 
-                // 2. Translate with Gemini in chunks if block count is very high
+                // 2. Classify (role / translate policy) and translate only translatable blocks
+                engine.classifyBlocks(pageData);
+                const translatable = blocks.filter(b => b.translate);
+                if (translatable.length === 0) {
+                    pageData.transCanvas = pageData.originalCanvas;
+                    continue;
+                }
+
                 progressStepTitle.textContent = `[2/3] 페이지 ${pageNum} Gemini AI 학술 번역 진행 중`;
-                progressStatusText.textContent = `총 ${blocks.length}개 학술 텍스트 블록의 수식/용어 보존 번역을 요청 중입니다...`;
+                progressStatusText.textContent = `총 ${translatable.length}개 학술 텍스트 블록의 수식/용어 보존 번역을 요청 중입니다...`;
+
+                const collect = (results, map) => {
+                    if (Array.isArray(results)) {
+                        results.forEach(item => {
+                            if (item && item.id && item.translated) map[item.id] = item.translated;
+                        });
+                    }
+                };
 
                 const chunkSize = 25; // Reliable chunk size for JSON output
                 const translationsMap = {};
 
-                for (let c = 0; c < blocks.length; c += chunkSize) {
+                for (let c = 0; c < translatable.length; c += chunkSize) {
                     if (state.shouldCancel) break;
-                    const chunk = blocks.slice(c, c + chunkSize);
+                    const chunk = translatable.slice(c, c + chunkSize);
                     const results = await engine.callGeminiTranslate(chunk, targetLang);
-                    if (Array.isArray(results)) {
-                        results.forEach(item => {
-                            if (item.id && item.translated) {
-                                translationsMap[item.id] = item.translated;
-                            }
-                        });
+                    collect(results, translationsMap);
+                }
+
+                // 2-b. Shorten-retry loop for translations that would overflow their box
+                for (let round = 0; round < 2 && !state.shouldCancel; round++) {
+                    const overflow = engine.findOverflow(pageData, translationsMap);
+                    if (overflow.length === 0) break;
+                    progressStatusText.textContent = `페이지 ${pageNum}: ${overflow.length}개 블록 축약 재번역 중 (${round + 1}/2)`;
+                    overflow.forEach(o => {
+                        if (o.block.maxCharsStrict) o.block.maxCharsStrict = Math.floor(o.block.maxCharsStrict * 0.85);
+                    });
+                    const targets = overflow.map(o => o.block);
+                    for (let c = 0; c < targets.length; c += 15) {
+                        const chunk = targets.slice(c, c + 15);
+                        try {
+                            const results = await engine.callGeminiTranslate(chunk, targetLang, {
+                                shorten: true,
+                                currentTranslations: translationsMap
+                            });
+                            collect(results, translationsMap);
+                        } catch (e) {
+                            console.warn('Shorten retry failed:', e);
+                        }
                     }
                 }
 
@@ -657,8 +704,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     pageData.originalCanvas,
                     pageData.blocks,
                     translationsMap,
-                    engine.scale
+                    engine.scale,
+                    pageData.figures || []
                 );
+                if (transCanvas.layoutWarnings) keptOriginalCount += transCanvas.layoutWarnings.length;
                 pageData.transCanvas = transCanvas;
 
                 // Live update if user is looking at this page
@@ -697,7 +746,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
                 state.translatedPdfBlob = await engine.createPdfFromCanvases(canvasesToExport, state.pdfDoc);
-                progressStatusText.textContent = '번역본 PDF가 준비되었습니다!';
+                progressStatusText.textContent = '번역본 PDF가 준비되었습니다!' +
+                    (keptOriginalCount > 0 ? ` (${keptOriginalCount}개 블록은 레이아웃 보존을 위해 원문 유지)` : '');
 
                 // Show download banner
                 downloadBanner.style.display = 'block';
