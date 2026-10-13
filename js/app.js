@@ -116,25 +116,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadApiKey() {
         try {
-            apiStatusText.textContent = '.env 파일 읽는 중...';
+            apiStatusText.textContent = 'AI 엔진 연결 확인 중...';
             let key = '';
             let source = '';
+            state.proxyReady = false;
+
+            // 1. 서버 헬스체크 및 프록시 가용성 확인 (/api/health)
+            try {
+                const healthRes = await fetch('/api/health');
+                if (healthRes.ok) {
+                    state.proxyReady = true;
+                }
+            } catch (e) {}
             
-            // 1. 백엔드 API 엔드포인트 시도 (TranslateServer.java)
+            // 2. 백엔드 API 엔드포인트 시도 (/api/key)
             try {
                 const resp = await fetch('/api/key');
                 if (resp.ok) {
                     const json = await resp.json();
                     if (json && json.key) {
                         key = json.key.trim();
-                        source = '.env 환경변수 연동됨';
+                        source = '서버 환경변수(.env) 연동됨';
+                        state.proxyReady = true;
                     }
                 }
-            } catch (e) {
-                console.log('Backend /api/key fetch failed, trying static .env...');
+            } catch (e) {}
+
+            // 3. 브라우저 저장소(사용자가 직접 입력한 커스텀 키) 확인
+            const customKey = localStorage.getItem('gemini_api_key');
+            if (customKey && customKey.trim().length > 10) {
+                key = customKey.trim();
+                source = '개인 커스텀 키 사용 중';
             }
 
-            // 2. 정적 .env 파일 직접 fetch 시도
+            // 4. 정적 .env 파일 직접 fetch 시도 (로컬 개발용)
             if (!key) {
                 try {
                     const resp = await fetch('.env?t=' + Date.now());
@@ -146,33 +161,18 @@ document.addEventListener('DOMContentLoaded', () => {
                             source = '.env 파일 연동됨';
                         }
                     }
-                } catch (e) {
-                    console.log('.env fetch failed, trying legacy key.txt...');
-                }
-            }
-
-            // 3. 하위 호환: 기존 apikey/key.txt 확인
-            if (!key) {
-                try {
-                    const resp = await fetch('apikey/key.txt?t=' + Date.now());
-                    if (resp.ok) {
-                        const text = await resp.text();
-                        if (text && text.trim().length > 10) {
-                            key = text.trim();
-                            source = 'key.txt 연동됨';
-                        }
-                    }
                 } catch (e) {}
-            }
-
-            // 4. Fallback: 브라우저 localStorage
-            if (!key) {
-                key = localStorage.getItem('gemini_api_key') || '';
-                if (key) source = '브라우저 저장소 연동됨';
             }
 
             if (key) {
                 setApiKey(key, source);
+            } else if (state.proxyReady) {
+                // 키를 직접 노출하지 않는 보안 프록시(Vercel, Render) 환경
+                engine.setApiKey('');
+                state.apiKey = '';
+                manualKeyInput.value = '';
+                apiPulseDot.style.backgroundColor = '#10b981';
+                apiStatusText.textContent = 'AI 번역 엔진 준비됨 (무료)';
             } else {
                 apiPulseDot.style.backgroundColor = '#f59e0b';
                 apiStatusText.textContent = 'API 키 설정 필요 (클릭)';
@@ -180,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             console.error('Failed to load key:', err);
             apiPulseDot.style.backgroundColor = '#ef4444';
-            apiStatusText.textContent = 'API 키 읽기 실패 (클릭)';
+            apiStatusText.textContent = 'AI 엔진 연결 실패 (클릭)';
         }
     }
 
@@ -214,25 +214,39 @@ document.addEventListener('DOMContentLoaded', () => {
     saveKeyBtn.addEventListener('click', () => {
         const val = manualKeyInput.value.trim();
         if (!val) {
-            alert('API 키를 입력해주세요.');
+            // 개인 키 초기화 시 서버 기본 엔진으로 전환
+            localStorage.removeItem('gemini_api_key');
+            state.apiKey = '';
+            engine.setApiKey('');
+            if (state.proxyReady) {
+                apiPulseDot.style.backgroundColor = '#10b981';
+                apiStatusText.textContent = 'AI 번역 엔진 준비됨 (무료)';
+                alert('개인 키가 제거되었습니다. 서버 기본 무료 AI 엔진으로 동작합니다.');
+            } else {
+                apiPulseDot.style.backgroundColor = '#f59e0b';
+                apiStatusText.textContent = 'API 키 설정 필요 (클릭)';
+            }
+            keyModalOverlay.style.display = 'none';
             return;
         }
-        setApiKey(val, 'API 키 직접 입력됨');
+        setApiKey(val, '개인 커스텀 키 사용 중');
+        alert('개인 Gemini API 키가 정상적으로 설정되었습니다.');
         keyModalOverlay.style.display = 'none';
     });
 
     reloadKeyFileBtn.addEventListener('click', async () => {
         await loadApiKey();
-        if (state.apiKey) {
-            keyValidationResult.style.display = 'block';
+        keyValidationResult.style.display = 'block';
+        if (state.apiKey || state.proxyReady) {
             keyValidationResult.style.background = '#ecfdf5';
             keyValidationResult.style.color = '#065f46';
-            keyValidationResult.textContent = '성공: .env 파일에서 Gemini API 키를 성공적으로 로드했습니다!';
+            keyValidationResult.textContent = state.apiKey 
+                ? '성공: 지정된 Gemini API 키가 유효합니다.' 
+                : '성공: 서버 AI 번역 엔진과 정상 연결되었습니다. 별도 키 입력 없이 바로 사용 가능합니다!';
         } else {
-            keyValidationResult.style.display = 'block';
             keyValidationResult.style.background = '#fef2f2';
             keyValidationResult.style.color = '#991b1b';
-            keyValidationResult.textContent = '안내: .env 파일에서 키를 읽지 못했습니다. run.bat(로컬 서버)을 실행 중인지 확인하거나 .env 파일의 GEMINI_API_KEY 항목을 확인해주세요.';
+            keyValidationResult.textContent = '안내: 서버 엔진을 찾을 수 없습니다. 개인 API 키를 직접 입력하시거나 서버 상태를 확인해주세요.';
         }
     });
 
@@ -556,8 +570,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function runTranslation() {
         if (!state.pdfDoc) return;
-        if (!state.apiKey) {
-            alert('Gemini API 키가 설정되지 않았습니다. 우측 상단 설정을 확인해주세요.');
+        if (!state.apiKey && !state.proxyReady) {
+            alert('AI 번역 엔진에 연결되지 않았습니다. 잠시 후 다시 시도하거나 우측 상단 설정을 확인해주세요.');
             keyModalOverlay.style.display = 'flex';
             return;
         }
